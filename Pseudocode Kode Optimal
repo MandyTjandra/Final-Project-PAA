@@ -1,0 +1,155 @@
+DEFINE CONSTANT ARRAY D_POS AS [-128, 1, 128, -1]
+DEFINE CONSTANT ARRAY B_DIR AS [2, 3, 0, 1]
+DEFINE CONSTANT ARRAY L_DIR AS [3, 0, 1, 2]
+DEFINE CONSTANT ARRAY R_DIR AS [1, 2, 3, 0]
+
+CREATE ARRAY top_arr OF SIZE 105
+CREATE ARRAY l_arr OF SIZE 105
+CREATE ARRAY r_arr OF SIZE 105
+CREATE ARRAY b_arr OF SIZE 105
+
+CREATE ARRAY stk_id OF SIZE 420
+CREATE ARRAY stk_pos OF SIZE 420
+CREATE ARRAY stk_dir OF SIZE 420
+
+CREATE ARRAY grid OF SIZE 16384
+CREATE ARRAY used OF SIZE 16384
+
+READ X
+IF X <= 0 THEN
+    EXIT
+END IF
+READ Y
+
+FOR i FROM 0 TO Y - 1
+    READ top_arr[i]
+END FOR
+FOR i FROM 0 TO X - 1
+    READ l_arr[i]
+    READ r_arr[i]
+END FOR
+FOR i FROM 0 TO Y - 1
+    READ b_arr[i]
+END FOR
+
+FOR i FROM 0 TO 16383
+    grid[i] = 255
+    used[i] = 0
+END FOR
+
+FOR i FROM 1 TO X
+    row = i * 128
+    FOR j FROM 1 TO Y
+        grid[row + j] = 0
+    END FOR
+END FOR
+
+stk_sz = 0
+FOR side FROM 0 TO 3
+    IF side BITWISE AND 1 THEN
+        cnt = X
+    ELSE
+        cnt = Y
+    END IF
+
+    FOR k FROM 0 TO cnt - 1
+        IF side > 1 THEN
+            idx = cnt - 1 - k
+        ELSE
+            idx = k
+        END IF
+
+        IF side == 0 THEN
+            id = top_arr[idx]
+            pos = 128 + idx + 1
+            dir = 2
+        ELSE IF side == 1 THEN
+            id = r_arr[idx]
+            pos = ((idx + 1) * 128) + Y
+            dir = 3
+        ELSE IF side == 2 THEN
+            id = b_arr[idx]
+            pos = (X * 128) + idx + 1
+            dir = 0
+        ELSE
+            id = l_arr[idx]
+            pos = ((idx + 1) * 128) + 1
+            dir = 1
+        END IF
+
+        IF stk_sz > 0 AND stk_id[stk_sz - 1] == id THEN
+            stk_sz = stk_sz - 1
+            cp = stk_pos[stk_sz]
+            cd = stk_dir[stk_sz]
+            tp = pos
+            td = B_DIR[dir]
+
+            WHILE TRUE
+                cell = grid[cp]
+                IF cell == 0 THEN
+                    ld = L_DIR[cd]
+                    IF (cp == tp AND ld == td) OR (grid[cp + D_POS[ld]] != 255 AND NOT (used[cp] BITWISE AND (1 LEFT SHIFT ld))) THEN
+                        IF cd BITWISE AND 1 THEN
+                            grid[cp] = 1
+                        ELSE
+                            grid[cp] = 3
+                        END IF
+                        cd = ld
+                    ELSE
+                        rd = R_DIR[cd]
+                        IF (cp == tp AND rd == td) OR (grid[cp + D_POS[rd]] != 255 AND NOT (used[cp] BITWISE AND (1 LEFT SHIFT rd))) THEN
+                            IF cd BITWISE AND 1 THEN
+                                grid[cp] = 3
+                            ELSE
+                                grid[cp] = 1
+                            END IF
+                            cd = rd
+                        ELSE
+                            PRINT "-1"
+                            EXIT
+                        END IF
+                    END IF
+                ELSE
+                    cd = cd BITWISE XOR cell
+                END IF
+                
+                used[cp] = used[cp] BITWISE OR (1 LEFT SHIFT cd)
+                
+                IF cp == tp AND cd == td THEN
+                    BREAK
+                END IF
+                
+                cp = cp + D_POS[cd]
+                
+                IF grid[cp] == 255 THEN
+                    PRINT "-1"
+                    EXIT
+                END IF
+                
+                used[cp] = used[cp] BITWISE OR (1 LEFT SHIFT B_DIR[cd])
+            END WHILE
+        ELSE
+            stk_id[stk_sz] = id
+            stk_pos[stk_sz] = pos
+            stk_dir[stk_sz] = dir
+            stk_sz = stk_sz + 1
+        END IF
+    END FOR
+END FOR
+
+IF stk_sz > 0 THEN
+    PRINT "-1"
+    EXIT
+END IF
+
+FOR i FROM 1 TO X
+    r = i * 128
+    FOR j FROM 1 TO Y
+        IF grid[r + j] == 3 THEN
+            PRINT "\" WITHOUT NEWLINE
+        ELSE
+            PRINT "/" WITHOUT NEWLINE
+        END IF
+    END FOR
+    PRINT NEWLINE
+END FOR
