@@ -1,201 +1,111 @@
+#pragma GCC optimize("Ofast,unroll-loops,omit-frame-pointer")
+
 #include <cstdio>
-#include <cstring>
 
-typedef unsigned short u16;
-typedef unsigned int u32;
+static char in_buf[1 << 19];
+static char *p = in_buf;
 
-char in_buf[1 << 17];
-int in_pos = 0;
-int in_len = 0;
-
-inline void init_io() {
-    in_len = fread(in_buf, 1, sizeof(in_buf) - 1, stdin);
-    in_buf[in_len] = '\0';
+#define GET_INT(n) { \
+    while (*p < '0') p++; \
+    n = *p++ - '0'; \
+    while (*p >= '0') n = n * 10 + (*p++ - '0'); \
 }
 
-inline void read_int(int &val) {
-    while (in_pos < in_len && in_buf[in_pos] < '0') in_pos++;
-    if (in_pos >= in_len) { val = -1; return; }
-    val = 0;
-    while (in_pos < in_len && in_buf[in_pos] >= '0') {
-        val = val * 10 + (in_buf[in_pos++] - '0');
-    }
-}
+static int top_arr[105], l_arr[105], r_arr[105], b_arr[105];
+static int stk_id[420], stk_pos[420], stk_dir[420];
 
-u16 dist_arr[65536];
-u16 vis_id[65536];
-u16 parent_state[65536];
-char parent_mirror[65536];
-u16 current_route_id = 0;
+static char _pad1[64];
+static unsigned char grid[16384];
+static char _pad2[64];
+static unsigned char used[16384];
 
-u32 dq[262144]; 
-char grid[16384];
-static const int DELTA[] = {-128, 1, 128, -1};
-
-struct Endpoint { 
-    int type, idx, id, r, c, dir; 
-    Endpoint() {}
-    Endpoint(int _t, int _i, int _id, int _r, int _c, int _d) 
-        : type(_t), idx(_i), id(_id), r(_r), c(_c), dir(_d) {}
-};
-
-struct PairEP { 
-    Endpoint s, t; 
-    PairEP() {}
-    PairEP(Endpoint _s, Endpoint _t) : s(_s), t(_t) {}
-};
-
-int top_arr[105], bottom_arr[105], left_arr[105], right_arr[105];
-Endpoint perim[420];
-Endpoint stk[420];
-PairEP pairs[420];
-int X, Y;
-
-#define PROCESS(ndir, m_char) do { \
-    int npos = pos + DELTA[ndir]; \
-    char ncell = grid[npos]; \
-    if (ncell == 'T') { \
-        u16 bstate = state; \
-        char bm = m_char; \
-        while (bstate != start_state) { \
-            int bpos = bstate >> 2; \
-            if (grid[bpos] == '.') grid[bpos] = bm; \
-            bm = parent_mirror[bstate]; \
-            bstate = parent_state[bstate]; \
-        } \
-        if (grid[bstate >> 2] == '.') grid[bstate >> 2] = bm; \
-        found = true; \
-    } else if (ncell != '#') { \
-        u16 nstate = (npos << 2) | ndir; \
-        int w = (ncell == '.') ? 1 : 0; \
-        int new_dist = cdist + w; \
-        if (vis_id[nstate] != current_route_id || new_dist < dist_arr[nstate]) { \
-            vis_id[nstate] = current_route_id; \
-            dist_arr[nstate] = new_dist; \
-            parent_state[nstate] = state; \
-            parent_mirror[nstate] = m_char; \
-            u32 n_item = (new_dist << 16) | nstate; \
-            if (w == 0) { \
-                dq_head = (dq_head - 1) & 262143; \
-                dq[dq_head] = n_item; \
-            } else { \
-                dq[dq_tail] = n_item; \
-                dq_tail = (dq_tail + 1) & 262143; \
-            } \
-        } \
-    } \
-} while(0)
+static const int D_POS[] = {-128, 1, 128, -1};
+static const int B_DIR[] = {2, 3, 0, 1};
+static const int L_DIR[] = {3, 0, 1, 2};
+static const int R_DIR[] = {1, 2, 3, 0};
 
 int main() {
-    init_io();
-    read_int(X); 
+    int len = fread(in_buf, 1, sizeof(in_buf) - 1, stdin);
+    in_buf[len] = 0;
+
+    int X, Y;
+    GET_INT(X);
     if (X <= 0) return 0;
-    read_int(Y);
+    GET_INT(Y);
 
-    if (X > 100 || Y > 100) { puts("-1"); return 0; }
+    register int i, j;
+    for (i = 0; i < Y; ++i) GET_INT(top_arr[i]);
+    for (i = 0; i < X; ++i) { GET_INT(l_arr[i]); GET_INT(r_arr[i]); }
+    for (i = 0; i < Y; ++i) GET_INT(b_arr[i]);
 
-    for (int i = 0; i < Y; ++i) read_int(top_arr[i]);
-    for (int i = 0; i < X; ++i) { read_int(left_arr[i]); read_int(right_arr[i]); }
-    for (int i = 0; i < Y; ++i) read_int(bottom_arr[i]);
-
-    for (int c = 0; c <= Y + 1; ++c) { grid[c] = '#'; grid[((X + 1) << 7) | c] = '#'; }
-    for (int r = 1; r <= X; ++r) {
-        int row_base = r << 7;
-        grid[row_base] = '#';
-        for (int c = 1; c <= Y; ++c) grid[row_base | c] = '.';
-        grid[row_base | (Y + 1)] = '#';
+    for (i = 0; i < 16384; ++i) { grid[i] = 255; used[i] = 0; }
+    for (i = 1; i <= X; ++i) {
+        int row = i << 7;
+        for (j = 1; j <= Y; ++j) grid[row + j] = 0;
     }
 
-    int perim_sz = 0;
-    for (int i = 0; i < Y; ++i) perim[perim_sz++] = Endpoint(0, i, top_arr[i], 1, i+1, 2);
-    for (int i = 0; i < X; ++i) perim[perim_sz++] = Endpoint(1, i, right_arr[i], i+1, Y, 3);
-    for (int i = Y-1; i >= 0; --i) perim[perim_sz++] = Endpoint(2, i, bottom_arr[i], X, i+1, 0);
-    for (int i = X-1; i >= 0; --i) perim[perim_sz++] = Endpoint(3, i, left_arr[i], i+1, 1, 1);
-
-    int stk_sz = 0, pairs_sz = 0;
-    for (int i = 0; i < perim_sz; ++i) {
-        if (stk_sz > 0 && stk[stk_sz - 1].id == perim[i].id) {
-            pairs[pairs_sz++] = PairEP(stk[stk_sz - 1], perim[i]);
-            stk_sz--;
-        } else {
-            stk[stk_sz++] = perim[i];
-        }
-    }
-    
-    if (stk_sz > 0) { puts("-1"); return 0; }
-
-    for (int p = 0; p < pairs_sz; ++p) {
-        const Endpoint& start_ep = pairs[p].s;
-        const Endpoint& target_ep = pairs[p].t;
-        
-        if (++current_route_id >= 60000) {
-            current_route_id = 1;
-            for(int i = 0; i < 65536; ++i) vis_id[i] = 0;
-        }
-
-        int target_r = -1, target_c = -1;
-        if (target_ep.type == 0) { target_r = 0; target_c = target_ep.idx + 1; }
-        else if (target_ep.type == 1) { target_r = target_ep.idx + 1; target_c = Y + 1; }
-        else if (target_ep.type == 2) { target_r = X + 1; target_c = target_ep.idx + 1; }
-        else if (target_ep.type == 3) { target_r = target_ep.idx + 1; target_c = 0; }
-
-        int target_pos = (target_r << 7) | target_c;
-        grid[target_pos] = 'T';
-
-        u32 dq_head = 0;
-        u32 dq_tail = 0;
-
-        u16 start_state = (((start_ep.r << 7) | start_ep.c) << 2) | start_ep.dir;
-        
-        vis_id[start_state] = current_route_id;
-        dist_arr[start_state] = 0;
-        
-        dq[dq_tail] = (0 << 16) | start_state;
-        dq_tail = (dq_tail + 1) & 262143;
-
-        bool found = false;
-
-        while (dq_head != dq_tail) {
-            u32 item = dq[dq_head];
-            dq_head = (dq_head + 1) & 262143;
+    int stk_sz = 0;
+    for (int side = 0; side < 4; ++side) {
+        int cnt = (side & 1) ? X : Y;
+        for (int k = 0; k < cnt; ++k) {
+            int idx = (side > 1) ? (cnt - 1 - k) : k;
+            int id, pos, dir;
             
-            int cdist = item >> 16;
-            u16 state = item & 0xFFFF;
+            if (side == 0) { id = top_arr[idx]; pos = 128 + idx + 1; dir = 2; }
+            else if (side == 1) { id = r_arr[idx]; pos = ((idx + 1) << 7) + Y; dir = 3; }
+            else if (side == 2) { id = b_arr[idx]; pos = (X << 7) + idx + 1; dir = 0; }
+            else { id = l_arr[idx]; pos = ((idx + 1) << 7) + 1; dir = 1; }
 
-            if (cdist > dist_arr[state]) continue;
+            if (stk_sz > 0 && stk_id[stk_sz - 1] == id) {
+                stk_sz--;
+                register int cp = stk_pos[stk_sz];
+                register int cd = stk_dir[stk_sz];
+                int tp = pos;
+                int td = B_DIR[dir];
 
-            int pos = state >> 2;
-            int dir = state & 3;
-            char cell = grid[pos];
-
-            if (cell != '.') {
-                int ndir = dir ^ ((cell == '/') ? 1 : 3);
-                PROCESS(ndir, cell);
-                if (found) break;
+                while (1) {
+                    register unsigned char cell = grid[cp];
+                    if (!cell) {
+                        int ld = L_DIR[cd];
+                        if ((cp == tp && ld == td) || (grid[cp + D_POS[ld]] != 255 && !(used[cp] & (1 << ld)))) {
+                            grid[cp] = (cd & 1) ? 1 : 3;
+                            cd = ld;
+                        } else {
+                            int rd = R_DIR[cd];
+                            if ((cp == tp && rd == td) || (grid[cp + D_POS[rd]] != 255 && !(used[cp] & (1 << rd)))) {
+                                grid[cp] = (cd & 1) ? 3 : 1;
+                                cd = rd;
+                            } else { puts("-1"); return 0; }
+                        }
+                    } else {
+                        cd ^= cell;
+                    }
+                    
+                    used[cp] |= (1 << cd);
+                    if (cp == tp && cd == td) break;
+                    cp += D_POS[cd];
+                    if (grid[cp] == 255) { puts("-1"); return 0; }
+                    used[cp] |= (1 << B_DIR[cd]);
+                }
             } else {
-                PROCESS(dir ^ 1, '/');
-                if (found) break;
-                PROCESS(dir ^ 3, '\\');
-                if (found) break;
+                stk_id[stk_sz] = id; stk_pos[stk_sz] = pos; stk_dir[stk_sz] = dir;
+                stk_sz++;
             }
         }
-
-        grid[target_pos] = '#';
-        if (!found) { puts("-1"); return 0; }
     }
 
-    char out_buf[16384];
-    char * out_ptr = out_buf;
-    
-    for (int r = 1; r <= X; ++r) {
-        int row_base = r << 7;
-        for (int c = 1; c <= Y; ++c) {
-            char cell = grid[row_base | c];
-            *out_ptr++ = (cell == '.') ? '/' : cell;
+    if (stk_sz) { puts("-1"); return 0; }
+
+    static char out[16384];
+    char *o = out;
+    for (i = 1; i <= X; ++i) {
+        int r = i << 7;
+        for (j = 1; j <= Y; ++j) {
+            *o++ = (grid[r + j] == 3) ? '\\' : '/';
         }
-        *out_ptr++ = '\n';
+        *o++ = '\n';
     }
-    fwrite(out_buf, 1, out_ptr - out_buf, stdout);
-    
+    fwrite(out, 1, o - out, stdout);
+
     return 0;
 }
